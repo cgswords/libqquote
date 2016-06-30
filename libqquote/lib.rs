@@ -22,10 +22,6 @@ use rustc_plugin::Registry;
 use std::rc::Rc;
 // use syntax_pos::{mk_sp, Span, DUMMY_SP, ExpnId};
 
-fn main() {
-    println!("Hello, world!");
-}
-
 #[plugin_registrar]
 pub fn plugin_registrar(reg: &mut Registry) {
   reg.register_syntax_extension(token::intern("qquote"),
@@ -96,4 +92,5 @@ fn qquote_lit<'cx>(cx : &'cx mut ExtCtxt, sp : Span, lit : token::Lit, suf : Opt
 
   Box::new(Result { lit : res, span : sp })
 }
+
 
