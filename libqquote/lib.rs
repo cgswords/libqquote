@@ -4,8 +4,8 @@ extern crate rustc_plugin;
 extern crate syntax;
 // extern crate syntax_pos;
 
-use syntax::ast;
-use syntax::ast::{TokenTree, Ident};
+use syntax::ast::{self, Ident};
+use syntax::tokenstream::TokenTree;
 use syntax::ext::base::*;
 use syntax::ext::base;
 use syntax::parse::parser::Parser;
@@ -115,7 +115,7 @@ fn qquoter<'cx>(cx: &'cx mut ExtCtxt, tts: &[TokenTree]) -> Vec<TokenTree> {
                  };
 
     vec![TokenTree::Delimited(DUMMY_SP,
-                              Rc::new(ast::Delimited {
+                              tokenstream::Delimited {
                                   delim: token::DelimToken::Brace,
                                   open_span: DUMMY_SP,
                                   tts: output,
@@ -247,7 +247,7 @@ fn convert_complex_tts<'cx>(cx: &'cx mut ExtCtxt, tts: Vec<QTT>) -> (Bindings, V
                 let mut dl = vec![];
                 dl.push(as_tt(str_to_tok_ident("Delimited")));
                 dl.push(TokenTree::Delimited(DUMMY_SP,
-                                             Rc::new(ast::Delimited {
+                                             Rc::new(tokenstream::Delimited {
                                                  delim: DelimToken::Brace,
                                                  open_span: DUMMY_SP,
                                                  tts: new_dl,
@@ -338,7 +338,7 @@ fn as_tt(t: Token) -> TokenTree {
 
 fn build_empty_args() -> TokenTree {
     TokenTree::Delimited(DUMMY_SP,
-                         Rc::new(ast::Delimited {
+                         Rc::new(tokenstream::Delimited {
                              delim: token::DelimToken::Paren,
                              open_span: DUMMY_SP,
                              tts: vec![],
@@ -366,7 +366,7 @@ fn build_let(id: Ident, mut tts: Vec<TokenTree>) -> Vec<TokenTree> {
 fn build_method_call(id: Ident, mthd: Ident, args: Vec<TokenTree>) -> Vec<TokenTree> {
     let mut output = as_tts(vec![Token::Ident(id), Token::Dot, Token::Ident(mthd)]);
 
-    let args = ast::Delimited {
+    let args = tokenstream::Delimited {
         delim: token::DelimToken::Paren,
         open_span: DUMMY_SP,
         tts: args,
