@@ -31,7 +31,7 @@ fn test_ident_1() -> () {
 
 fn test_ident_2() -> () {
   let foo = 5;
-  assert_eq(qquote!(unquote(foo)), 5)
+  assert_eq!(qquote!(unquote(foo)), 5)
 }
 
 fn main() {

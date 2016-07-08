@@ -5,18 +5,16 @@ extern crate syntax;
 // extern crate syntax_pos;
 
 use syntax::ast::{self, Ident};
-use syntax::tokenstream::TokenTree;
+use syntax::tokenstream::{self, TokenTree};
 use syntax::ext::base::*;
 use syntax::ext::base;
 use syntax::parse::parser::Parser;
 use syntax::parse::token::{self, Token, keywords, gensym_ident, DelimToken, str_to_ident};
 use syntax::ptr::P;
-// use syntax::tokenstream::TokenTree;
 
 use syntax::codemap::{Span, DUMMY_SP};
 
 use rustc_plugin::Registry;
-use std::rc::Rc;
 // use syntax_pos::{mk_sp, Span, DUMMY_SP, ExpnId};
 
 // ____________________________________________________________________________________________
@@ -61,7 +59,7 @@ fn qquote<'cx>(cx: &'cx mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<base::M
                 id: ast::DUMMY_NODE_ID,
                 node: ast::ExprKind::Block(me.block()),
                 span: me.span,
-                attrs: None,
+                attrs: ast::ThinVec::new(),
             }))
 
         }
@@ -120,7 +118,7 @@ fn qquoter<'cx>(cx: &'cx mut ExtCtxt, tts: &[TokenTree]) -> Vec<TokenTree> {
                                   open_span: DUMMY_SP,
                                   tts: output,
                                   close_span: DUMMY_SP,
-                              }))]
+                              })]
 }
 
 fn qquote_iter<'cx>(cx: &'cx mut ExtCtxt, depth: i64, tts: Vec<TokenTree>) -> (Bindings, Vec<QTT>) {
@@ -247,12 +245,12 @@ fn convert_complex_tts<'cx>(cx: &'cx mut ExtCtxt, tts: Vec<QTT>) -> (Bindings, V
                 let mut dl = vec![];
                 dl.push(as_tt(str_to_tok_ident("Delimited")));
                 dl.push(TokenTree::Delimited(DUMMY_SP,
-                                             Rc::new(tokenstream::Delimited {
+                                             tokenstream::Delimited {
                                                  delim: DelimToken::Brace,
                                                  open_span: DUMMY_SP,
                                                  tts: new_dl,
                                                  close_span: DUMMY_SP,
-                                             })));
+                                             }));
                 append_last(&mut pushes, dl);
             }
             QTT::QIdent(t) => {
@@ -338,12 +336,12 @@ fn as_tt(t: Token) -> TokenTree {
 
 fn build_empty_args() -> TokenTree {
     TokenTree::Delimited(DUMMY_SP,
-                         Rc::new(tokenstream::Delimited {
+                         tokenstream::Delimited {
                              delim: token::DelimToken::Paren,
                              open_span: DUMMY_SP,
                              tts: vec![],
                              close_span: DUMMY_SP,
-                         }))
+                         })
 }
 
 fn build_struct_field_assign(field: Ident, mut rhs: Vec<TokenTree>) -> Vec<TokenTree> {
@@ -373,7 +371,7 @@ fn build_method_call(id: Ident, mthd: Ident, args: Vec<TokenTree>) -> Vec<TokenT
         close_span: DUMMY_SP,
     };
 
-    output.push(TokenTree::Delimited(DUMMY_SP, Rc::new(args)));
+    output.push(TokenTree::Delimited(DUMMY_SP, args));
 
     output
 }
