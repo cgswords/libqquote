@@ -1,3 +1,4 @@
+#![crate_type="dylib"]
 #![feature(plugin)]
 #![feature(plugin_registrar)]
 #![plugin(qquote)]
@@ -7,8 +8,10 @@
 
 extern crate rustc_plugin;
 extern crate syntax;
+extern crate qquote;
 // extern crate syntax_pos;
 
+use qquote::convert::build_paren_delim;
 use syntax::ast::{self, Ident};
 use syntax::tokenstream::{self, TokenTree};
 use syntax::ext::base::*;
@@ -30,13 +33,13 @@ static DEBUG : bool = true;
 
 #[plugin_registrar]
 pub fn plugin_registrar(reg: &mut Registry) {
-    reg.register_macro("add", add);
+    reg.register_macro("double", double);
 }
 
-fn add<'cx>(cx: &'cx mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<base::MacResult + 'cx> {
+fn double<'cx>(cx: &'cx mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<base::MacResult + 'cx> {
 
-    let mut tts : Vec<TokenTree> = tts.clone().to_owned();
-    let output : &[TokenTree] = qquote!(unquote(tts) + unquote(tts));
+    let mut tts = build_paren_delim(tts.clone().to_owned());
+    let output: Vec<TokenTree> = qquote!(unquote(tts) + unquote(tts));
     { if DEBUG { println!("\nQQ out: {}\n", pprust::tts_to_string(&output[..])); } }
     let parser = cx.new_parser_from_tts(&output);
 

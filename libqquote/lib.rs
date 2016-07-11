@@ -4,7 +4,7 @@ extern crate rustc_plugin;
 extern crate syntax;
 // extern crate syntax_pos;
 
-mod convert;
+pub mod convert;
 use convert::*;
 
 use syntax::ast::{self, Ident};
