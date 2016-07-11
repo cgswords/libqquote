@@ -1,11 +1,10 @@
 [package]
-name = "qquote"
+name = "double"
 version = "0.1.0"
 authors = ["cgswords <cameronswords@gmail.com>"]
 
-[lib]
-name = "qquote"
-path = "libqquote/lib.rs"
-plugin = true
-
 [dependencies]
+qquote={path=".."}
+
+[lib]
+plugin=true

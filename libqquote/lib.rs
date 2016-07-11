@@ -8,7 +8,7 @@ pub mod convert;
 use convert::*;
 
 use syntax::ast::{self, Ident};
-use syntax::tokenstream::{self, TokenTree};
+use syntax::tokenstream::{self, TokenTree, Delimited};
 use syntax::ext::base::*;
 use syntax::ext::base;
 use syntax::parse::parser::Parser;

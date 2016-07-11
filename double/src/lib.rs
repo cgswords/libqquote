@@ -13,7 +13,7 @@ extern crate qquote;
 
 use qquote::convert::build_paren_delim;
 use syntax::ast::{self, Ident};
-use syntax::tokenstream::{self, TokenTree};
+use syntax::tokenstream::{self, TokenTree, Delimited};
 use syntax::ext::base::*;
 use syntax::ext::base;
 use syntax::parse::parser::Parser;
@@ -38,8 +38,9 @@ pub fn plugin_registrar(reg: &mut Registry) {
 
 fn double<'cx>(cx: &'cx mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<base::MacResult + 'cx> {
 
-    let mut tts = build_paren_delim(tts.clone().to_owned());
-    let output: Vec<TokenTree> = qquote!(unquote(tts));
+    let mut tts1 = build_paren_delim(tts.clone().to_owned());
+    let mut tts2 = build_paren_delim(tts.clone().to_owned());
+    let output: Vec<TokenTree> = vec![qquote!({ unquote(tts1) + unquote(tts2) })];
     { if DEBUG { println!("\nQQ out: {}\n", pprust::tts_to_string(&output[..])); } }
     let parser = cx.new_parser_from_tts(&output);
 

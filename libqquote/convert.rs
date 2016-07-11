@@ -97,15 +97,19 @@ pub fn convert_complex_tts<'cx>(cx: &'cx mut ExtCtxt, tts: Vec<QTT>) -> (Binding
                 new_dl.append(&mut tts_field);
                 new_dl.append(&mut close_sp_field);
 
-                let mut dl = vec![];
-                dl.push(as_tt(str_to_tok_ident("Delimited")));
-                dl.push(TokenTree::Delimited(DUMMY_SP,
+                let mut args = vec![str_to_tt_ident("DUMMY_SP"), as_tt(Token::Comma)];
+                args.push(str_to_tt_ident("Delimited"));
+                args.push(TokenTree::Delimited(DUMMY_SP,
                                              tokenstream::Delimited {
                                                  delim: DelimToken::Brace,
                                                  open_span: DUMMY_SP,
                                                  tts: new_dl,
                                                  close_span: DUMMY_SP,
                                              }));
+                let mut dl = vec![str_to_tt_ident("TokenTree"), as_tt(Token::ModSep)];
+                let mut inv = build_fn_call(str_to_ident("Delimited"), args);
+                dl.append(&mut inv);
+
                 append_last(&mut pushes, dl);
             }
             QTT::QIdent(t) => {
@@ -277,6 +281,10 @@ pub fn build_token_tt(t: Token) -> Vec<TokenTree> {
 
 pub fn build_push_vec(tts: &[TokenTree]) -> Vec<TokenTree> {
     // FIXME this is wrong
+    // let mut output = Vec::new();
+    // output.push(str_to_tt_ident("vec!"));
+    // output.push(build_bracket_delim(tts.clone().to_owned()));
+    // output
     tts.clone().to_owned()
 }
 
@@ -290,6 +298,29 @@ pub fn build_paren_delim(tts: Vec<TokenTree>) -> TokenTree {
       close_span: DUMMY_SP,
     })
 }
+
+pub fn build_brace_delim(tts: Vec<TokenTree>) -> TokenTree {
+  TokenTree::Delimited(
+    DUMMY_SP,
+    tokenstream::Delimited {
+      delim: token::DelimToken::Brace,
+      open_span: DUMMY_SP,
+      tts: tts,
+      close_span: DUMMY_SP,
+    })
+}
+
+pub fn build_bracket_delim(tts: Vec<TokenTree>) -> TokenTree {
+  TokenTree::Delimited(
+    DUMMY_SP,
+    tokenstream::Delimited {
+      delim: token::DelimToken::Bracket,
+      open_span: DUMMY_SP,
+      tts: tts,
+      close_span: DUMMY_SP,
+    })
+}
+
 
 pub fn str_to_tt_ident(s: &str) -> TokenTree {
   TokenTree::Token(DUMMY_SP, str_to_tok_ident(s))
