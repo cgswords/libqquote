@@ -1,4 +1,5 @@
 #![feature(plugin)]
+#![feature(plugin_registrar)]
 #![plugin(qquote)]
 
 #![allow(unused_mut)]
@@ -13,7 +14,7 @@ use syntax::tokenstream::{self, TokenTree};
 use syntax::ext::base::*;
 use syntax::ext::base;
 use syntax::parse::parser::Parser;
-use syntax::parse::token::{self, Token, keywords, gensym_ident, DelimToken, str_to_ident};
+use syntax::parse::token::{self, Token, keywords, gensym_ident, DelimToken, str_to_ident, BinOpToken};
 use syntax::ptr::P;
 use syntax::print::pprust;
 
@@ -34,7 +35,8 @@ pub fn plugin_registrar(reg: &mut Registry) {
 
 fn add<'cx>(cx: &'cx mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<base::MacResult + 'cx> {
 
-    let output = qquote!(unquote(tts) + 5);
+    let mut tts : Vec<TokenTree> = tts.clone().to_owned();
+    let output : &[TokenTree] = qquote!(unquote(tts) + unquote(tts));
     { if DEBUG { println!("\nQQ out: {}\n", pprust::tts_to_string(&output[..])); } }
     let parser = cx.new_parser_from_tts(&output);
 
