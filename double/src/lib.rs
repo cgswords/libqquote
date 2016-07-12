@@ -12,6 +12,7 @@ extern crate qquote;
 // extern crate syntax_pos;
 
 use qquote::convert::build_paren_delim;
+use qquote::quotable::Quotable;
 use syntax::ast::{self, Ident};
 use syntax::tokenstream::{self, TokenTree, Delimited};
 use syntax::ext::base::*;
@@ -20,6 +21,7 @@ use syntax::parse::parser::Parser;
 use syntax::parse::token::{self, Token, keywords, gensym_ident, DelimToken, str_to_ident, BinOpToken};
 use syntax::ptr::P;
 use syntax::print::pprust;
+use std::rc::Rc;
 
 use syntax::codemap::{Span, DUMMY_SP};
 
@@ -40,7 +42,7 @@ fn double<'cx>(cx: &'cx mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<base::M
 
     let mut tts1 = build_paren_delim(tts.clone().to_owned());
     let mut tts2 = build_paren_delim(tts.clone().to_owned());
-    let output: Vec<TokenTree> = vec![qquote!({ unquote(tts1) + unquote(tts2) })];
+    let output: Vec<TokenTree> = qquote!({ unquote(tts1) + unquote(tts2) });
     { if DEBUG { println!("\nQQ out: {}\n", pprust::tts_to_string(&output[..])); } }
     let parser = cx.new_parser_from_tts(&output);
 

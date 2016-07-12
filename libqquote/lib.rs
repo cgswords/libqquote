@@ -7,6 +7,9 @@ extern crate syntax;
 pub mod convert;
 use convert::*;
 
+pub mod quotable;
+pub mod parse;
+
 use syntax::ast::{self, Ident};
 use syntax::tokenstream::{self, TokenTree, Delimited};
 use syntax::ext::base::*;
@@ -20,6 +23,8 @@ use syntax::codemap::{Span, DUMMY_SP};
 
 use rustc_plugin::Registry;
 // use syntax_pos::{mk_sp, Span, DUMMY_SP, ExpnId};
+
+use std::rc::Rc;
 
 static DEBUG : bool = true;
 
@@ -37,14 +42,10 @@ fn qquote<'cx>(cx: &'cx mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<base::M
     { if DEBUG { println!("\nQQ out: {}\n", pprust::tts_to_string(&output[..])); } }
     let parser = cx.new_parser_from_tts(&output);
 
-    
-
     struct Result<'a> {
         prsr: Parser<'a>,
         span: Span,
-    }; //FIXME is this the right lifetime
-
-
+    };
 
     impl<'a> Result<'a> {
         fn block(&mut self) -> P<ast::Block> {
@@ -113,13 +114,7 @@ fn qquoter<'cx>(cx: &'cx mut ExtCtxt, tts: &[TokenTree]) -> Vec<TokenTree> {
                    output
                  };
 
-    vec![TokenTree::Delimited(DUMMY_SP,
-                              tokenstream::Delimited {
-                                  delim: token::DelimToken::Brace,
-                                  open_span: DUMMY_SP,
-                                  tts: output,
-                                  close_span: DUMMY_SP,
-                              })]
+    vec![build_brace_delim(output)]
 }
 
 fn qquote_iter<'cx>(cx: &'cx mut ExtCtxt, depth: i64, tts: Vec<TokenTree>) -> (Bindings, Vec<QTT>) {

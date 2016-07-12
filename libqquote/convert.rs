@@ -1,8 +1,11 @@
-#![feature(plugin_registrar, quote, rustc_private)]
+#![feature(plugin_registrar, rustc_private)]
 
 extern crate syntax;
+extern crate syntax_pos;
 
 use ::{QDelimited, QTT, Bindings};
+use quotable::*;
+use parse::*;
 
 use syntax::ast::{self, Ident};
 use syntax::tokenstream::{self, TokenTree};
@@ -14,6 +17,8 @@ use syntax::ptr::P;
 use syntax::print::pprust;
 
 use syntax::codemap::{Span, DUMMY_SP};
+
+use std::rc::Rc;
 
 // ____________________________________________________________________________________________
 // Datatype Definitions
@@ -97,20 +102,13 @@ pub fn convert_complex_tts<'cx>(cx: &'cx mut ExtCtxt, tts: Vec<QTT>) -> (Binding
                 new_dl.append(&mut tts_field);
                 new_dl.append(&mut close_sp_field);
 
-                let mut args = vec![str_to_tt_ident("DUMMY_SP"), as_tt(Token::Comma)];
-                args.push(str_to_tt_ident("Delimited"));
-                args.push(TokenTree::Delimited(DUMMY_SP,
-                                             tokenstream::Delimited {
-                                                 delim: DelimToken::Brace,
-                                                 open_span: DUMMY_SP,
-                                                 tts: new_dl,
-                                                 close_span: DUMMY_SP,
-                                             }));
-                let mut dl = vec![str_to_tt_ident("TokenTree"), as_tt(Token::ModSep)];
-                let mut inv = build_fn_call(str_to_ident("Delimited"), args);
-                dl.append(&mut inv);
+                let mut args = lex("DUMMY_SP,");
+                let mut rc_arg = vec![str_to_tt_ident("Delimited")];
+                rc_arg.push(build_brace_delim(new_dl));
 
-                append_last(&mut pushes, dl);
+                args.append(&mut build_mod_call(vec![str_to_ident("Rc"),str_to_ident("new")], rc_arg));
+
+                append_last(&mut pushes, build_mod_call(vec![str_to_ident("TokenTree"),str_to_ident("Delimited")], args));
             }
             QTT::QIdent(t) => {
                 pushes.push(vec![t]);
@@ -125,41 +123,27 @@ pub fn convert_complex_tts<'cx>(cx: &'cx mut ExtCtxt, tts: Vec<QTT>) -> (Binding
 
     let output_id = str_to_ident("output");
     if pushes.len() == 1 {
-        let res = vec![TokenTree::Delimited(DUMMY_SP,
-                                            tokenstream::Delimited {
-                                                delim: token::DelimToken::Brace,
-                                                open_span: DUMMY_SP,
-                                                tts: build_push_vec(&pushes.get(0).unwrap()[..]),
-                                                close_span: DUMMY_SP,
-                                            })];
+        let mut res = pushes.get(0).unwrap().clone();
+        res.append(&mut lex(".to_appendable()"));
         (bindings, res)
     } else {
         let push_id = str_to_ident("push");
-        let mut output = as_tts(vec![kw_to_tok_ident(keywords::Let),
-                                     kw_to_tok_ident(keywords::Mut),
-                                     Token::Ident(output_id),
-                                     Token::Eq,
-                                     str_to_tok_ident("Vec"),
-                                     Token::ModSep,
-                                     str_to_tok_ident("new")]);
-        output.push(build_empty_args());
+        let append_id = str_to_ident("append");
+        let mut output = lex("let mut output = Vec::new();");
         output.push(as_tt(Token::Semi));
 
-        for tts in pushes.into_iter().filter(|x| x.len() > 0) {
-            let mut push_vec = build_method_call(output_id, push_id, build_push_vec(&tts[..]));
+        for mut tts in pushes.into_iter().filter(|x| x.len() > 0) {
+            let mut args = lex("&mut ");
+            args.append(&mut tts);
+            args.append(&mut lex(".to_appendable()"));
+            let mut push_vec = build_method_call(output_id, append_id, args);
             output.append(&mut push_vec);
             output.push(as_tt(Token::Semi));
         }
 
-        output.push(as_tt(Token::Ident(output_id)));
+        output.append(&mut lex("output.to_appendable()"));
 
-        let res = vec![TokenTree::Delimited(DUMMY_SP,
-                                            tokenstream::Delimited {
-                                                delim: token::DelimToken::Brace,
-                                                open_span: DUMMY_SP,
-                                                tts: output,
-                                                close_span: DUMMY_SP,
-                                            })];
+        let res = vec![build_brace_delim(output)];
         (bindings, res)
     }
 }
@@ -172,11 +156,8 @@ pub fn convert_complex_tts<'cx>(cx: &'cx mut ExtCtxt, tts: Vec<QTT>) -> (Binding
 // output stream.
 pub fn emit_token(t: Token) -> Vec<TokenTree> {
   // FIXME do something nicer with the spans
-  let modsep = TokenTree::Token(DUMMY_SP, Token::ModSep);
   let mut output = Vec::new();
-  output.push(str_to_tt_ident("TokenTree"));
-  output.push(modsep);
-  output.push(str_to_tt_ident("Token"));
+  output.append(&mut lex("TokenTree::Token"));
 
   let mut del = Vec::new();
   del.push(str_to_tt_ident("DUMMY_SP"));
@@ -191,79 +172,82 @@ pub fn emit_token(t: Token) -> Vec<TokenTree> {
 }
 
 pub fn build_binop_tok(bot: token::BinOpToken) -> Vec<TokenTree> {
-  let mut output = as_tts(vec![str_to_tok_ident("BinOpToken"), Token::ModSep]);
-
   match bot {
-    token::BinOpToken::Plus    => { output.push(str_to_tt_ident("Plus")); }
-    token::BinOpToken::Minus   => { output.push(str_to_tt_ident("Minus")); }
-    token::BinOpToken::Star    => { output.push(str_to_tt_ident("Star")); }
-    token::BinOpToken::Slash   => { output.push(str_to_tt_ident("Slash")); }
-    token::BinOpToken::Percent => { output.push(str_to_tt_ident("Percent")); }
-    token::BinOpToken::Caret   => { output.push(str_to_tt_ident("Caret")); }
-    token::BinOpToken::And     => { output.push(str_to_tt_ident("And")); }
-    token::BinOpToken::Or      => { output.push(str_to_tt_ident("Or")); }
-    token::BinOpToken::Shl     => { output.push(str_to_tt_ident("Shl")); }
-    token::BinOpToken::Shr     => { output.push(str_to_tt_ident("Shr")); }
+    token::BinOpToken::Plus    => lex("Token::BinOp(BinOpToken::Plus)"),
+    token::BinOpToken::Minus   => lex("Token::BinOp(BinOpToken::Minus)"),
+    token::BinOpToken::Star    => lex("Token::BinOp(BinOpToken::Star)"),
+    token::BinOpToken::Slash   => lex("Token::BinOp(BinOpToken::Slash)"),
+    token::BinOpToken::Percent => lex("Token::BinOp(BinOpToken::Percent)"),
+    token::BinOpToken::Caret   => lex("Token::BinOp(BinOpToken::Caret)"),
+    token::BinOpToken::And     => lex("Token::BinOp(BinOpToken::And)"),
+    token::BinOpToken::Or      => lex("Token::BinOp(BinOpToken::Or)"),
+    token::BinOpToken::Shl     => lex("Token::BinOp(BinOpToken::Shl)"),
+    token::BinOpToken::Shr     => lex("Token::BinOp(BinOpToken::Shr)"),
   }
-  output
+}
+
+pub fn build_binopeq_tok(bot: token::BinOpToken) -> Vec<TokenTree> {
+  match bot {
+    token::BinOpToken::Plus    => lex("Token::BinOpEq(BinOpToken::Plus)"),
+    token::BinOpToken::Minus   => lex("Token::BinOpEq(BinOpToken::Minus)"),
+    token::BinOpToken::Star    => lex("Token::BinOpEq(BinOpToken::Star)"),
+    token::BinOpToken::Slash   => lex("Token::BinOpEq(BinOpToken::Slash)"),
+    token::BinOpToken::Percent => lex("Token::BinOpEq(BinOpToken::Percent)"),
+    token::BinOpToken::Caret   => lex("Token::BinOpEq(BinOpToken::Caret)"),
+    token::BinOpToken::And     => lex("Token::BinOpEq(BinOpToken::And)"),
+    token::BinOpToken::Or      => lex("Token::BinOpEq(BinOpToken::Or)"),
+    token::BinOpToken::Shl     => lex("Token::BinOpEq(BinOpToken::Shl)"),
+    token::BinOpToken::Shr     => lex("Token::BinOpEq(BinOpToken::Shr)"),
+  }
 }
 
 pub fn build_delim_tok(dt: token::DelimToken) -> Vec<TokenTree> {
-  as_tts(vec![str_to_tok_ident("DelimToken"), Token::ModSep, 
-              match dt {
-                token::DelimToken::Paren   => str_to_tok_ident("Paren"),
-                token::DelimToken::Bracket => str_to_tok_ident("Bracket"),
-                token::DelimToken::Brace   => str_to_tok_ident("Brace"),
-              }
-             ])
+  match dt {
+    token::DelimToken::Paren   => lex("DelimToken::Paren"),
+    token::DelimToken::Bracket => lex("DelimToken::Bracket"),
+    token::DelimToken::Brace   => lex("DelimToken::Brace"),
+  }
 }
 
 pub fn build_token_tt(t: Token) -> Vec<TokenTree> {
-  let mut output = as_tts(vec![str_to_tok_ident("Token"), Token::ModSep]);
-
   match t
-  { Token::Eq     => { output.push(str_to_tt_ident("Eq")); }
-    Token::Lt     => { output.push(str_to_tt_ident("Lt")); }
-    Token::Le     => { output.push(str_to_tt_ident("Le")); }
-    Token::EqEq   => { output.push(str_to_tt_ident("EqEq")); }
-    Token::Ne     => { output.push(str_to_tt_ident("Ne")); }
-    Token::Ge     => { output.push(str_to_tt_ident("Ge")); }
-    Token::Gt     => { output.push(str_to_tt_ident("Gt")); }
-    Token::AndAnd => { output.push(str_to_tt_ident("AndAnd")); }
-    Token::OrOr   => { output.push(str_to_tt_ident("OrOr")); }
-    Token::Not    => { output.push(str_to_tt_ident("Not")); }
-    Token::Tilde  => { output.push(str_to_tt_ident("Tilde")); }
-    Token::BinOp(tok) => { 
-      let mut build = build_fn_call(str_to_ident("BinOp"), build_binop_tok(tok));
-      output.append(&mut build);
-    }
-    Token::BinOpEq(tok) => { 
-      let mut build = build_fn_call(str_to_ident("BinOpEq"), build_binop_tok(tok));
-      output.append(&mut build);
-    }
-    Token::At        => { output.push(str_to_tt_ident("At")); }
-    Token::Dot       => { output.push(str_to_tt_ident("Dot")); }
-    Token::DotDot    => { output.push(str_to_tt_ident("DotDot")); }
-    Token::DotDotDot => { output.push(str_to_tt_ident("DotDotDot")); }
-    Token::Comma     => { output.push(str_to_tt_ident("Comma")); }
-    Token::Semi      => { output.push(str_to_tt_ident("Semi")); }
-    Token::Colon     => { output.push(str_to_tt_ident("Colon")); }
-    Token::ModSep    => { output.push(str_to_tt_ident("ModSep")); }
-    Token::RArrow    => { output.push(str_to_tt_ident("RArrow")); }
-    Token::LArrow    => { output.push(str_to_tt_ident("LArrow")); }
-    Token::FatArrow  => { output.push(str_to_tt_ident("FatArrow")); }
-    Token::Pound     => { output.push(str_to_tt_ident("Pound")); }
-    Token::Dollar    => { output.push(str_to_tt_ident("Dollar")); }
-    Token::Question  => { output.push(str_to_tt_ident("Question")); }
-
-    Token::OpenDelim(dt) => { 
-      let mut build = build_fn_call(str_to_ident("OpenDelim"), build_delim_tok(dt));
-      output.append(&mut build);
-    }
-    Token::CloseDelim(dt) => { 
-      let mut build = build_fn_call(str_to_ident("CloseDelim"), build_delim_tok(dt));
-      output.append(&mut build);
-    }
+  { Token::Eq           => lex("Token::Eq"),
+    Token::Lt           => lex("Token::Lt"),
+    Token::Le           => lex("Token::Le"),
+    Token::EqEq         => lex("Token::EqEq"),
+    Token::Ne           => lex("Token::Ne"),
+    Token::Ge           => lex("Token::Ge"),
+    Token::Gt           => lex("Token::Gt"),
+    Token::AndAnd       => lex("Token::AndAnd"),
+    Token::OrOr         => lex("Token::OrOr"),
+    Token::Not          => lex("Token::Not"),
+    Token::Tilde        => lex("Token::Tilde"),
+    Token::BinOp(tok)   => build_binop_tok(tok),
+    Token::BinOpEq(tok) => build_binopeq_tok(tok),
+    Token::At           => lex("Token::At"),
+    Token::Dot          => lex("Token::Dot"),
+    Token::DotDot       => lex("Token::DotDot"),
+    Token::DotDotDot    => lex("Token::DotDotDot"),
+    Token::Comma        => lex("Token::Comma"),
+    Token::Semi         => lex("Token::Semi"),
+    Token::Colon        => lex("Token::Colon"),
+    Token::ModSep       => lex("Token::ModSep"),
+    Token::RArrow       => lex("Token::RArrow"),
+    Token::LArrow       => lex("Token::LArrow"),
+    Token::FatArrow     => lex("Token::FatArrow"),
+    Token::Pound        => lex("Token::Pound"),
+    Token::Dollar       => lex("Token::Dollar"),
+    Token::Question     => lex("Token::Question"),
+    Token::OpenDelim(dt) => match dt {
+      token::DelimToken::Paren   => lex("Token::OpenDelim(DelimToken::Paren)"), 
+      token::DelimToken::Bracket => lex("Token::OpenDelim(DelimToken::Bracket)"), 
+      token::DelimToken::Brace   => lex("Token::OpenDelim(DelimToken::Brace)"), 
+    },
+    Token::CloseDelim(dt) => match dt {
+      token::DelimToken::Paren   => lex("Token::CloseDelim(DelimToken::Paren)"), 
+      token::DelimToken::Bracket => lex("Token::CloseDelim(DelimToken::Bracket)"), 
+      token::DelimToken::Brace   => lex("Token::CloseDelim(DelimToken::Brace)"), 
+    },
     // FIXME finish this block
     // /* Literals */
     // Literal(Lit, Option<ast::Name>),
@@ -272,53 +256,51 @@ pub fn build_token_tt(t: Token) -> Vec<TokenTree> {
     // Ident(ast::Ident),
     // Token::Underscore => { output.push(str_to_ident("Underscore")); }
     // Lifetime(ast::Ident),
-    _ => {
-      panic!("Unhandled case!")
-    }
+
+    _ => panic!("Unhandled case!"),
   }
-  output
 }
 
 pub fn build_push_vec(tts: &[TokenTree]) -> Vec<TokenTree> {
     // FIXME this is wrong
-    // let mut output = Vec::new();
-    // output.push(str_to_tt_ident("vec!"));
-    // output.push(build_bracket_delim(tts.clone().to_owned()));
-    // output
-    tts.clone().to_owned()
+    let mut output = Vec::new();
+    output.push(str_to_tt_ident("vec!"));
+    output.push(build_bracket_delim(tts.clone().to_owned()));
+    output
+    //tts.clone().to_owned()
 }
 
 pub fn build_paren_delim(tts: Vec<TokenTree>) -> TokenTree {
   TokenTree::Delimited(
     DUMMY_SP,
-    tokenstream::Delimited {
+    Rc::new(tokenstream::Delimited {
       delim: token::DelimToken::Paren,
       open_span: DUMMY_SP,
       tts: tts,
       close_span: DUMMY_SP,
-    })
+    }))
 }
 
 pub fn build_brace_delim(tts: Vec<TokenTree>) -> TokenTree {
   TokenTree::Delimited(
     DUMMY_SP,
-    tokenstream::Delimited {
+    Rc::new(tokenstream::Delimited {
       delim: token::DelimToken::Brace,
       open_span: DUMMY_SP,
       tts: tts,
       close_span: DUMMY_SP,
-    })
+    }))
 }
 
 pub fn build_bracket_delim(tts: Vec<TokenTree>) -> TokenTree {
   TokenTree::Delimited(
     DUMMY_SP,
-    tokenstream::Delimited {
+    Rc::new(tokenstream::Delimited {
       delim: token::DelimToken::Bracket,
       open_span: DUMMY_SP,
       tts: tts,
       close_span: DUMMY_SP,
-    })
+    }))
 }
 
 
@@ -384,26 +366,17 @@ pub fn build_method_call(id: Ident, mthd: Ident, args: Vec<TokenTree>) -> Vec<To
     output
 }
 
+pub fn build_mod_call(ids: Vec<Ident>, args: Vec<TokenTree>) -> Vec<TokenTree> {
+    let mut output = intersperse(ids.into_iter().map(|id| as_tt(Token::Ident(id))).collect(),
+                                 TokenTree::Token(DUMMY_SP, Token::ModSep));
+    output.append(&mut vec![build_paren_delim(args)]);
+    output
+}
+
 pub fn build_fn_call(name: Ident, args: Vec<TokenTree>) -> Vec<TokenTree> {
     let mut output = as_tts(vec![Token::Ident(name)]);
     output.push(build_paren_delim(args));
     output
-}
-
-pub fn push_last(tts: &mut Vec<Vec<TokenTree>>, tt: TokenTree) {
-    if tts.is_empty() {
-        tts.push(vec![tt]);
-    } else {
-        tts.last_mut().unwrap().push(tt);
-    }
-}
-
-pub fn append_last(tts: &mut Vec<Vec<TokenTree>>, mut ts: Vec<TokenTree>) {
-    if tts.is_empty() {
-        tts.push(ts);
-    } else {
-        tts.last_mut().unwrap().append(&mut ts);
-    }
 }
 
 pub fn is_unquote(id: Ident) -> bool {
@@ -416,3 +389,32 @@ pub fn is_quote(id: Ident) -> bool {
     id.name == qq.name  // We disregard context; qquote is _reserved_
 }
 
+// ____________________________________________________________________________________________
+// Vector Utilities
+
+pub fn push_last<T>(tts: &mut Vec<Vec<T>>, tt: T) {
+    if tts.is_empty() {
+        tts.push(vec![tt]);
+    } else {
+        tts.last_mut().unwrap().push(tt);
+    }
+}
+
+pub fn append_last<T>(tts: &mut Vec<Vec<T>>, mut ts: Vec<T>) {
+    if tts.is_empty() {
+        tts.push(ts);
+    } else {
+        tts.last_mut().unwrap().append(&mut ts);
+    }
+}
+
+pub fn intersperse<T>(vs : Vec<T>, t : T) -> Vec<T> where T : Clone { 
+  if vs.len() < 2 { return vs; }
+  let mut output = vec![vs.get(0).unwrap().to_owned()];
+
+  for v in vs.into_iter().skip(1) {
+    output.push(t.clone());
+    output.push(v);
+  }
+  output
+}

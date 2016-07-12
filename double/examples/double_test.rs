@@ -8,6 +8,7 @@
 // Main 
 
 fn main() {
-  println!("{}", double!(5));
+  let foo = vec![double!(5)];
+  println!("{:?}", foo);
 }
 
