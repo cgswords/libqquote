@@ -44,24 +44,7 @@ fn double<'cx>(cx: &'cx mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<base::M
     let mut tts1 = build_paren_delim(tts.clone().to_owned());
     let mut tts2 = build_paren_delim(tts.clone().to_owned());
 
-    // let output: Vec<TokenTree> = qquote!({ unquote(tts1) + unquote(tts2) });
-
-    let output : Vec<TokenTree> = { 
-     let tmp = ( tts ) ; let qdl_tmp = {
-       let mut output = Vec :: new (  ) ; ; output . append (
-       & mut vec ! ( tmp ) . to_appendable (  ) ) ; output . append (
-       & mut vec ! (
-       TokenTree :: Token ( DUMMY_SP , Token :: BinOp ( BinOpToken :: Star ) ) ,
-       TokenTree :: Token (
-       DUMMY_SP , Token :: Literal ( Lit :: Integer ( ast :: Name ( 148 ) ) , None )
-       ) , ) . to_appendable (  ) ) ; output . to_appendable (  ) } ; 
-       
-       let res = vec ! ( TokenTree :: Delimited ( DUMMY_SP , Rc :: new ( Delimited {
-         delim : token :: DelimToken :: Brace , open_span : DUMMY_SP , tts : qdl_tmp ,
-         close_span : DUMMY_SP , } ) ));
-       
-       res . to_appendable (  )
-    };
+    let output: Vec<TokenTree> = qquote!({ unquote(tts1) + unquote(tts2) });
 
     { if DEBUG { println!("\nQQ out: {}\n", pprust::tts_to_string(&output[..])); } }
 
