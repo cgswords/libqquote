@@ -58,6 +58,7 @@ pub fn convert_complex_tts<'cx>(cx: &'cx mut ExtCtxt, tts: Vec<QTT>) -> (Binding
             QTT::TT(TokenTree::Token(_, t)) => {
                 let token_out = emit_token(t);
                 append_last(&mut pushes, token_out);
+                append_last(&mut pushes, lex(","));
             }
             // FIXME handle sequence repetition tokens
             QTT::QDL(qdl) => {
@@ -69,22 +70,19 @@ pub fn convert_complex_tts<'cx>(cx: &'cx mut ExtCtxt, tts: Vec<QTT>) -> (Binding
                 let mut new_dl = Vec::new();
 
                 let sep = {
-                    let mut output = vec![str_to_tok_ident("token"),
-                                          Token::ModSep,
-                                          str_to_tok_ident("DelimToken"),
-                                          Token::ModSep];
+                    let mut output = lex("token::DelimToken::");
                     match qdl.delim {
                         DelimToken::Paren => {
-                            output.push(str_to_tok_ident("Paren"));
+                            output.push(str_to_tt_ident("Paren"));
                         }
                         DelimToken::Brace => {
-                            output.push(str_to_tok_ident("Brace"));
+                            output.push(str_to_tt_ident("Brace"));
                         }
                         DelimToken::Bracket => {
-                            output.push(str_to_tok_ident("Bracket"));
+                            output.push(str_to_tt_ident("Bracket"));
                         }
                     };
-                    as_tts(output)
+                    output
                 };
 
                 let mut delim_field = build_struct_field_assign(str_to_ident("delim"), sep);
@@ -134,7 +132,7 @@ pub fn convert_complex_tts<'cx>(cx: &'cx mut ExtCtxt, tts: Vec<QTT>) -> (Binding
 
         for mut tts in pushes.into_iter().filter(|x| x.len() > 0) {
             let mut args = lex("&mut ");
-            args.append(&mut tts);
+            args.append(&mut build_push_vec(tts));
             args.append(&mut lex(".to_appendable()"));
             let mut push_vec = build_method_call(output_id, append_id, args);
             output.append(&mut push_vec);
@@ -169,6 +167,27 @@ pub fn emit_token(t: Token) -> Vec<TokenTree> {
   output.push(build_paren_delim(del));
 
   output
+}
+
+pub fn emit_lit(l: token::Lit, n: Option<ast::Name>) -> Vec<TokenTree> {
+  let suf = match n {
+              Some(n) => format!("Some(ast::Name({}))", n.0),
+              None    => "None".to_string(),
+            };
+
+  let lit = match l {
+              token::Lit::Byte(n)    => format!("Lit::Byte(ast::Name({}))", n.0),
+              token::Lit::Char(n)    => format!("Lit::Char(ast::Name({}))", n.0),
+              token::Lit::Integer(n) => format!("Lit::Integer(ast::Name({}))", n.0),
+              token::Lit::Float(n)   => format!("Lit::Float(ast::Name({}))", n.0),
+              token::Lit::Str_(n)    => format!("Lit::Str_(ast::Name({}))", n.0),
+              token::Lit::ByteStr(n) => format!("Lit::ByteStr(ast::Name({}))", n.0),
+              _ => panic!("Unsupported literal"), 
+            };
+
+  let res = format!("Token::Literal({},{})",lit, suf);
+  { println!("{}", res); }
+  lex(&res)
 }
 
 pub fn build_binop_tok(bot: token::BinOpToken) -> Vec<TokenTree> {
@@ -248,25 +267,18 @@ pub fn build_token_tt(t: Token) -> Vec<TokenTree> {
       token::DelimToken::Bracket => lex("Token::CloseDelim(DelimToken::Bracket)"), 
       token::DelimToken::Brace   => lex("Token::CloseDelim(DelimToken::Brace)"), 
     },
+    Token::Literal(lit, sfx) => emit_lit(lit, sfx),
     // FIXME finish this block
-    // /* Literals */
-    // Literal(Lit, Option<ast::Name>),
-
     // /* Name components */
     // Ident(ast::Ident),
     // Token::Underscore => { output.push(str_to_ident("Underscore")); }
     // Lifetime(ast::Ident),
-
     _ => panic!("Unhandled case!"),
   }
 }
 
-pub fn build_push_vec(tts: &[TokenTree]) -> Vec<TokenTree> {
-    // FIXME this is wrong
-    let mut output = Vec::new();
-    output.push(str_to_tt_ident("vec!"));
-    output.push(build_bracket_delim(tts.clone().to_owned()));
-    output
+pub fn build_push_vec(tts: Vec<TokenTree>) -> Vec<TokenTree> {
+    build_mac_call(str_to_ident("vec"), tts)
     //tts.clone().to_owned()
 }
 
@@ -379,6 +391,12 @@ pub fn build_fn_call(name: Ident, args: Vec<TokenTree>) -> Vec<TokenTree> {
     output
 }
 
+pub fn build_mac_call(name: Ident, args: Vec<TokenTree>) -> Vec<TokenTree> {
+    let mut output = as_tts(vec![Token::Ident(name),Token::Not]);
+    output.push(build_paren_delim(args));
+    output
+}
+
 pub fn is_unquote(id: Ident) -> bool {
     let qq = str_to_ident("unquote");
     id.name == qq.name  // We disregard context; unquote is _reserved_
@@ -398,6 +416,10 @@ pub fn push_last<T>(tts: &mut Vec<Vec<T>>, tt: T) {
     } else {
         tts.last_mut().unwrap().push(tt);
     }
+}
+
+pub fn last_empty<T>(tts: &Vec<Vec<T>>) -> bool {
+  tts.is_empty() || tts.last().unwrap().is_empty()
 }
 
 pub fn append_last<T>(tts: &mut Vec<Vec<T>>, mut ts: Vec<T>) {

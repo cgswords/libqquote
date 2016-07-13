@@ -24,6 +24,24 @@ impl Quotable for Token {
   }
 }
 
+impl<'a> Quotable for &'a [TokenTree] {
+  fn to_appendable(self) -> Vec<TokenTree> {
+    self.clone().to_owned()
+  }
+}
+
+impl<'a> Quotable for Vec<&'a [TokenTree]> {
+  fn to_appendable(self) -> Vec<TokenTree> {
+    let mut output = Vec::new();
+    for tts in self {
+      output.append(&mut tts.clone().to_owned());
+    }
+    output
+  }
+}
+
+
+
 impl Quotable for TokenTree {
   fn to_appendable(self) -> Vec<TokenTree> {
     vec![self]
@@ -35,6 +53,17 @@ impl Quotable for Vec<TokenTree> {
     self
   }
 }
+
+impl Quotable for Vec<Vec<TokenTree>> {
+  fn to_appendable(self) -> Vec<TokenTree> {
+    let mut output = Vec::new();
+    for mut tts in self.into_iter() {
+      output.append(&mut tts);
+    }
+    output
+  }
+}
+
 impl Quotable for TokenStream {
   fn to_appendable(self) -> Vec<TokenTree> {
     self.tts

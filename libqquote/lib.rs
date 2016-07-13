@@ -38,6 +38,7 @@ pub fn plugin_registrar(reg: &mut Registry) {
 
 fn qquote<'cx>(cx: &'cx mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<base::MacResult + 'cx> {
 
+    { if DEBUG { println!("\nTTs in: {:?}\n", tts); } }
     let output = qquoter(cx, tts);
     { if DEBUG { println!("\nQQ out: {}\n", pprust::tts_to_string(&output[..])); } }
     let parser = cx.new_parser_from_tts(&output);
