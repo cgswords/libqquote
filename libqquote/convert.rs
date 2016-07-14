@@ -176,12 +176,12 @@ pub fn emit_lit(l: token::Lit, n: Option<ast::Name>) -> Vec<TokenTree> {
             };
 
   let lit = match l {
-              token::Lit::Byte(n)    => format!("Lit::Byte(ast::Name({}))", n.0),
-              token::Lit::Char(n)    => format!("Lit::Char(ast::Name({}))", n.0),
-              token::Lit::Integer(n) => format!("Lit::Integer(ast::Name({}))", n.0),
-              token::Lit::Float(n)   => format!("Lit::Float(ast::Name({}))", n.0),
-              token::Lit::Str_(n)    => format!("Lit::Str_(ast::Name({}))", n.0),
-              token::Lit::ByteStr(n) => format!("Lit::ByteStr(ast::Name({}))", n.0),
+              token::Lit::Byte(n)    => format!("Lit::Byte(token::intern(\"{}\"))", n.to_string()),
+              token::Lit::Char(n)    => format!("Lit::Char(token::intern(\"{}\"))", n.to_string()),
+              token::Lit::Integer(n) => format!("Lit::Integer(token::intern(\"{}\"))", n.to_string()),
+              token::Lit::Float(n)   => format!("Lit::Float(token::intern(\"{}\"))", n.to_string()),
+              token::Lit::Str_(n)    => format!("Lit::Str_(token::intern(\"{}\"))", n.to_string()),
+              token::Lit::ByteStr(n) => format!("Lit::ByteStr(token::intern(\"{}\"))", n.to_string()),
               _ => panic!("Unsupported literal"), 
             };
 
