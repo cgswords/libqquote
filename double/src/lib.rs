@@ -81,6 +81,6 @@ fn cond_rec(input: Vec<TokenTree>) -> Vec<TokenTree> {
   if ident_eq(&test, str_to_ident("else")) || rest.is_empty() { 
     qquote!({unquote(rhs)})
   } else {
-    qquote!({if unquote(test) { unquote(rhs) } unquote(if rest.is_empty() { qquote!() } else { qquote!(else { cond!(unquote(rest)) }) })})
+    qquote!({if unquote(test) { unquote(rhs) } else { cond!(unquote(rest)) } })
   }
 }

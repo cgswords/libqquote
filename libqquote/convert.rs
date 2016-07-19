@@ -108,6 +108,7 @@ pub fn convert_complex_tts<'cx>(cx: &'cx mut ExtCtxt, tts: Vec<QTT>) -> (Binding
                 args.append(&mut build_mod_call(vec![str_to_ident("Rc"),str_to_ident("new")], rc_arg));
 
                 append_last(&mut pushes, build_mod_call(vec![str_to_ident("TokenTree"),str_to_ident("Delimited")], args));
+                append_last(&mut pushes, lex(","));
             }
             QTT::QIdent(t) => {
                 pushes.push(vec![t]);
