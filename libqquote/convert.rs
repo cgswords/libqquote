@@ -3,7 +3,7 @@
 extern crate syntax;
 extern crate syntax_pos;
 
-use ::{QDelimited, QTT, Bindings};
+use ::{QDelimited, QTT, Bindings,DEBUG};
 use quotable::*;
 use parse::*;
 
@@ -62,6 +62,7 @@ pub fn convert_complex_tts<'cx>(cx: &'cx mut ExtCtxt, tts: Vec<QTT>) -> (Binding
             }
             // FIXME handle sequence repetition tokens
             QTT::QDL(qdl) => {
+                { if DEBUG { println!("  QDL: {:?} ", qdl.tts); } }
                 let new_id = gensym_ident("qdl_tmp");
                 let mut cct_rec = convert_complex_tts(cx, qdl.tts);
                 bindings.append(&mut cct_rec.0);
@@ -122,12 +123,15 @@ pub fn convert_complex_tts<'cx>(cx: &'cx mut ExtCtxt, tts: Vec<QTT>) -> (Binding
     let output_id = str_to_ident("output");
     if pushes.len() == 1 {
         let mut res = pushes.get(0).unwrap().clone();
+        if res.len() > 1 {
+          res = build_push_vec(res);
+        }
         res.append(&mut lex(".to_appendable()"));
         (bindings, res)
     } else {
         let push_id = str_to_ident("push");
         let append_id = str_to_ident("append");
-        let mut output = lex("let mut output = Vec::new();");
+        let mut output = lex("let mut output : Vec<TokenTree> = Vec::new();");
         output.push(as_tt(Token::Semi));
 
         for mut tts in pushes.into_iter().filter(|x| x.len() > 0) {
@@ -267,12 +271,11 @@ pub fn build_token_tt(t: Token) -> Vec<TokenTree> {
       token::DelimToken::Bracket => lex("Token::CloseDelim(DelimToken::Bracket)"), 
       token::DelimToken::Brace   => lex("Token::CloseDelim(DelimToken::Brace)"), 
     },
+    Token::Underscore => lex("_"),
     Token::Literal(lit, sfx) => emit_lit(lit, sfx),
-    // FIXME finish this block
-    // /* Name components */
-    // Ident(ast::Ident),
-    // Token::Underscore => { output.push(str_to_ident("Underscore")); }
-    // Lifetime(ast::Ident),
+    // fix ident expansion information... somehow
+    Token::Ident(ident) => lex(&format!("Token::Ident(str_to_ident(\"{}\"))",ident.name)),
+    Token::Lifetime(ident) => lex(&format!("Token::Ident(str_to_ident(\"{}\"))",ident.name)),
     _ => panic!("Unhandled case!"),
   }
 }
@@ -405,6 +408,16 @@ pub fn is_unquote(id: Ident) -> bool {
 pub fn is_quote(id: Ident) -> bool {
     let qq = str_to_ident("qquote");
     id.name == qq.name  // We disregard context; qquote is _reserved_
+}
+
+pub fn ident_eq(tident : &TokenTree, id: Ident) -> bool {
+  let tid = match *tident {
+    TokenTree::Token(_, Token::Ident(ref id)) => id,
+    _ => { return false; }
+  };
+
+  tid.name == id.name // We disregard context for this; it's for 'reserved' keywords
+  // A good implementation should do something... way smarter.
 }
 
 // ____________________________________________________________________________________________

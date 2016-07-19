@@ -11,13 +11,15 @@ extern crate syntax;
 extern crate qquote;
 // extern crate syntax_pos;
 
-use qquote::convert::build_paren_delim;
+use qquote::convert::{build_paren_delim, ident_eq};
 use qquote::quotable::Quotable;
+use qquote::{build_emitter};
 use syntax::ast::{self, Ident};
-use syntax::tokenstream::{self, TokenTree, Delimited};
+use syntax::tokenstream::{self, TokenTree, Delimited, TokenStream};
 use syntax::ext::base::*;
 use syntax::ext::base;
 use syntax::parse::parser::Parser;
+use syntax::parse::new_parser_from_ts;
 use syntax::parse::token::{self, Token, DelimToken, BinOpToken, Lit};
 use syntax::parse::token::{keywords, gensym_ident, str_to_ident};
 use syntax::ptr::P;
@@ -38,6 +40,7 @@ static DEBUG : bool = true;
 pub fn plugin_registrar(reg: &mut Registry) {
     reg.register_macro("double", double);
     reg.register_macro("double2", double2);
+    reg.register_macro("cond", cond);
 }
 
 fn double<'cx>(cx: &'cx mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<base::MacResult + 'cx> {
@@ -48,77 +51,36 @@ fn double<'cx>(cx: &'cx mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<base::M
 
     { if DEBUG { println!("\nQQ out: {}\n", pprust::tts_to_string(&output[..])); } }
 
-    let parser = cx.new_parser_from_tts(&output);
-
-    struct Result<'a> {
-        prsr: Parser<'a>,
-        span: Span,
-    }; //FIXME is this the right lifetime
-
-    impl<'a> Result<'a> {
-        fn block(&mut self) -> P<ast::Block> {
-            let res = self.prsr.parse_block().unwrap();
-            { if DEBUG { println!("\nOutput ast: {:?}\n", res); } }
-            res
-        }
-    }
-
-    impl<'a> base::MacResult for Result<'a> {
-        fn make_expr(self: Box<Self>) -> Option<P<ast::Expr>> {
-            let mut me = *self;
-            Some(P(ast::Expr {
-                id: ast::DUMMY_NODE_ID,
-                node: ast::ExprKind::Block(me.block()),
-                span: me.span,
-                attrs: ast::ThinVec::new(),
-            }))
-
-        }
-    }
-
-    Box::new(Result {
-        prsr: parser,
-        span: sp,
-    })
+    build_emitter(cx, sp, output)
 }
 
 fn double2<'cx>(cx: &'cx mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<base::MacResult + 'cx> {
-    let tts = tts.clone().to_owned();
+    build_emitter(cx, sp, qquote!({unquote(tts) * 2}))
+}
 
-    let output: Vec<TokenTree> = qquote!({ unquote(tts) * 2 });
+fn cond<'cx>(cx: &'cx mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<base::MacResult + 'cx> {
+    build_emitter(cx, sp, cond_rec(tts.clone().to_owned()))
+}
 
-    { if DEBUG { println!("\nQQ out: {}\n", pprust::tts_to_string(&output[..])); } }
+fn cond_rec(input: Vec<TokenTree>) -> Vec<TokenTree> {
+  if input.is_empty() { return qquote!(); }
 
-    let parser = cx.new_parser_from_tts(&output);
+  let next = &input[0..1];
+  let rest = &input[1..];
 
-    struct Result<'a> {
-        prsr: Parser<'a>,
-        span: Span,
-    }; //FIXME is this the right lifetime
+  let clause : Vec<TokenTree> = match *next.get(0).unwrap() {
+    TokenTree::Delimited(_, ref dlm) => dlm.tts.clone().to_owned(),
+    _ => panic!("Invalid input")
+  };
 
-    impl<'a> Result<'a> {
-        fn block(&mut self) -> P<ast::Block> {
-            let res = self.prsr.parse_block().unwrap();
-            { if DEBUG { println!("\nOutput ast: {:?}\n", res); } }
-            res
-        }
-    }
+  if clause.len() != 3 { panic!("Not a match: {:?}", clause) } // clause is [test] , [rhs]
 
-    impl<'a> base::MacResult for Result<'a> {
-        fn make_expr(self: Box<Self>) -> Option<P<ast::Expr>> {
-            let mut me = *self;
-            Some(P(ast::Expr {
-                id: ast::DUMMY_NODE_ID,
-                node: ast::ExprKind::Block(me.block()),
-                span: me.span,
-                attrs: ast::ThinVec::new(),
-            }))
+  let test: TokenTree = clause.get(0).unwrap().clone().to_owned();
+  let rhs: TokenTree  = clause.get(2).unwrap().clone().to_owned();
 
-        }
-    }
-
-    Box::new(Result {
-        prsr: parser,
-        span: sp,
-    })
+  if ident_eq(&test, str_to_ident("else")) || rest.is_empty() { 
+    qquote!({unquote(rhs)})
+  } else {
+    qquote!({if unquote(test) { unquote(rhs) } unquote(if rest.is_empty() { qquote!() } else { qquote!(else { cond!(unquote(rest)) }) })})
+  }
 }

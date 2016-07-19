@@ -41,44 +41,14 @@ fn qquote<'cx>(cx: &'cx mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<base::M
     { if DEBUG { println!("\nTTs in: {:?}\n", tts); } }
     let output = qquoter(cx, tts);
     { if DEBUG { println!("\nQQ out: {}\n", pprust::tts_to_string(&output[..])); } }
-    let parser = cx.new_parser_from_tts(&output);
-
-    struct Result<'a> {
-        prsr: Parser<'a>,
-        span: Span,
-    };
-
-    impl<'a> Result<'a> {
-        fn block(&mut self) -> P<ast::Block> {
-            let res = self.prsr.parse_block().unwrap();
-            { if DEBUG { println!("\nOutput ast: {:?}\n", res); } }
-            res
-        }
-    }
-
-    impl<'a> base::MacResult for Result<'a> {
-        fn make_expr(self: Box<Self>) -> Option<P<ast::Expr>> {
-            let mut me = *self;
-            Some(P(ast::Expr {
-                id: ast::DUMMY_NODE_ID,
-                node: ast::ExprKind::Block(me.block()),
-                span: me.span,
-                attrs: ast::ThinVec::new(),
-            }))
-
-        }
-    }
-
-    Box::new(Result {
-        prsr: parser,
-        span: sp,
-    })
+		build_emitter(cx, sp, output)
 }
 
 
 // ____________________________________________________________________________________________
 // Datatype Definitions
 
+#[derive(Debug)]
 pub struct QDelimited {
     pub delim: token::DelimToken,
     pub open_span: Span,
@@ -86,6 +56,7 @@ pub struct QDelimited {
     pub close_span: Span,
 }
 
+#[derive(Debug)]
 pub enum QTT {
     TT(TokenTree),
     QDL(QDelimited),
@@ -176,3 +147,40 @@ fn qquote_iter<'cx>(cx: &'cx mut ExtCtxt, depth: i64, tts: Vec<TokenTree>) -> (B
     (bindings, output)
 }
 
+// ____________________________________________________________________________________________
+// Emitter Constructor
+
+pub fn build_emitter<'cx>(cx: &'cx mut ExtCtxt, sp: Span, output: Vec<TokenTree>) -> Box<base::MacResult + 'cx> { 
+    let parser = cx.new_parser_from_tts(&output);
+
+    struct Result<'a> { 
+        prsr: Parser<'a>,
+        span: Span,
+    }; //FIXME is this the right lifetime
+
+    impl<'a> Result<'a> { 
+        fn block(&mut self) -> P<ast::Block> { 
+            let res = self.prsr.parse_block().unwrap();
+            { if DEBUG { println!("\nOutput ast: {:?}\n", res); } } 
+            res
+        } 
+    } 
+
+    impl<'a> base::MacResult for Result<'a> { 
+        fn make_expr(self: Box<Self>) -> Option<P<ast::Expr>> { 
+            let mut me = *self;
+            Some(P(ast::Expr { 
+                id: ast::DUMMY_NODE_ID,
+                node: ast::ExprKind::Block(me.block()),
+                span: me.span,
+                attrs: ast::ThinVec::new(),
+            }))
+
+        } 
+    } 
+
+    Box::new(Result { 
+        prsr: parser,
+        span: sp,
+    })
+}
