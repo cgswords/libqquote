@@ -66,7 +66,7 @@ impl Quotable for Vec<Vec<TokenTree>> {
 
 impl Quotable for TokenStream {
   fn to_appendable(self) -> Vec<TokenTree> {
-    self.tts
+    self.to_tts()
   }
 }
 
