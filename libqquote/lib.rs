@@ -2,33 +2,27 @@
 
 extern crate rustc_plugin;
 extern crate syntax;
-// extern crate syntax_pos;
 
 mod convert;
-use convert::*;
-
 pub mod build;
-use build::*;
-pub mod quotable;
 pub mod parse;
+use build::*;
+use convert::*;
+use parse::lex;
 
 use syntax::ast::{self, Ident};
-use syntax::tokenstream::{self, TokenTree, Delimited, TokenStream};
+use syntax::tokenstream::{TokenTree, TokenStream};
 use syntax::ext::base::*;
 use syntax::ext::base;
 use syntax::parse::parser::Parser;
-use syntax::parse::token::{self, Token, keywords, gensym_ident, DelimToken, str_to_ident};
+use syntax::parse::token::{self, Token, gensym_ident};
 use syntax::ptr::P;
 use syntax::print::pprust;
-
-use syntax::codemap::{Span, DUMMY_SP};
+use syntax::codemap::{Span};
 
 use rustc_plugin::Registry;
-// use syntax_pos::{mk_sp, Span, DUMMY_SP, ExpnId};
 
-use std::rc::Rc;
-
-static DEBUG : bool = true;
+static DEBUG : bool = false;
 
 // ____________________________________________________________________________________________
 // Main macro definition
@@ -43,7 +37,7 @@ fn qquote<'cx>(cx: &'cx mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<base::M
     { if DEBUG { println!("\nTTs in: {:?}\n", pprust::tts_to_string(&tts[..])); } }
     let output = qquoter(cx, TokenStream::from_tts(tts.clone().to_owned()));
     { if DEBUG { println!("\nQQ out: {}\n", pprust::tts_to_string(&output.to_tts()[..])); } }
-		build_emitter(cx, sp, build_brace_delim(output).to_tts())
+		build_emitter(cx, sp, build_brace_delim(output))
 }
 
 
@@ -71,6 +65,7 @@ pub type Bindings = Vec<(Ident, TokenStream)>;
 // Quasiquoter Algorithm
 
 fn qquoter<'cx>(cx: &'cx mut ExtCtxt, ts: TokenStream) -> TokenStream {
+    if ts.is_empty() { return lex("TokenStream::mk_empty()"); }
     let qq_res = qquote_iter(cx, 0, ts);
     let mut bindings = qq_res.0;
     let body = qq_res.1;
@@ -161,8 +156,8 @@ fn qquote_iter<'cx>(cx: &'cx mut ExtCtxt, depth: i64, ts: TokenStream) -> (Bindi
 // ____________________________________________________________________________________________
 // Emitter Constructor
 
-pub fn build_emitter<'cx>(cx: &'cx mut ExtCtxt, sp: Span, output: Vec<TokenTree>) -> Box<base::MacResult + 'cx> { 
-    let parser = cx.new_parser_from_tts(&output);
+pub fn build_emitter<'cx>(cx: &'cx mut ExtCtxt, sp: Span, output: TokenStream) -> Box<base::MacResult + 'cx> { 
+    let parser = cx.new_parser_from_tts(&output.to_tts());
 
     struct Result<'a> { 
         prsr: Parser<'a>,

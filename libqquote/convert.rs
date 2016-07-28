@@ -1,25 +1,14 @@
-#![feature(plugin_registrar, rustc_private)]
-
 extern crate syntax;
 extern crate syntax_pos;
 
-use ::{QDelimited, QTT, Bindings, DEBUG};
-use quotable::*;
+use ::{QTT, Bindings, DEBUG};
 use parse::*;
 use build::*;
 
-use syntax::ast::{self, Ident};
-use syntax::tokenstream::{self, TokenTree, TokenStream};
+use syntax::ast::Ident;
+use syntax::tokenstream::{TokenTree, TokenStream};
 use syntax::ext::base::*;
-use syntax::ext::base;
-use syntax::parse::parser::Parser;
-use syntax::parse::token::{self, Token, keywords, gensym_ident, DelimToken, str_to_ident};
-use syntax::ptr::P;
-use syntax::print::pprust;
-
-use syntax::codemap::{Span, DUMMY_SP};
-
-use std::rc::Rc;
+use syntax::parse::token::{Token, gensym_ident, DelimToken, str_to_ident};
 
 // ____________________________________________________________________________________________
 // Datatype Definitions
@@ -43,8 +32,28 @@ use std::rc::Rc;
 // ____________________________________________________________________________________________
 // Quote Builder
 
+fn build_concats(tss: Vec<(TokenStream, bool)>) -> TokenStream {
+    let mut pushes : Vec<(TokenStream, bool)> = tss.into_iter().filter(|&(ref ts, _)| !ts.is_empty()).collect();
+    let mut output = match pushes.pop() {
+      Some((ts, true)) => build_vec_ts(ts),
+      Some((ts, false)) => ts,
+      None => { return TokenStream::mk_empty(); }
+    };
+
+    while let Some((ts, is_tts)) = pushes.pop() {
+      output = 
+          build_fn_call(
+              str_to_ident("concat"), 
+              concat(
+                  concat(if is_tts { build_vec_ts(ts) } else { ts }, 
+                         as_ts(vec![Token::Comma])), 
+                  output));
+    }
+    output
+}
+
 pub fn convert_complex_tts<'cx>(cx: &'cx mut ExtCtxt, tts: Vec<QTT>) -> (Bindings, TokenStream) {
-    let mut pushes: Vec<TokenStream> = Vec::new();
+    let mut pushes: Vec<(TokenStream, bool)> = Vec::new();
     let mut bindings: Bindings = Vec::new();
 
     let mut iter = tts.into_iter();
@@ -75,15 +84,18 @@ pub fn convert_complex_tts<'cx>(cx: &'cx mut ExtCtxt, tts: Vec<QTT>) -> (Binding
                     DelimToken::Bracket => lex("token::DelimToken::Bracket"),
                 };
 
-                let mut delim_field = build_struct_field_assign(str_to_ident("delim"), sep);
-                let mut open_sp_field =
-                    build_struct_field_assign(str_to_ident("open_span"),
-                                              as_ts(vec![str_to_tok_ident("DUMMY_SP")]));
-                let mut tts_field = build_struct_field_assign(str_to_ident("tts"),
-                                                              as_ts(vec![Token::Ident(new_id)]));
-                let mut close_sp_field =
-                    build_struct_field_assign(str_to_ident("close_span"),
-                                              as_ts(vec![str_to_tok_ident("DUMMY_SP")]));
+                let delim_field = build_struct_field_assign(str_to_ident("delim"), sep);
+                let open_sp_field =
+                     build_struct_field_assign(str_to_ident("open_span"),
+                                               as_ts(vec![str_to_tok_ident("DUMMY_SP")]));
+                let tts_field = build_struct_field_assign(str_to_ident("tts"),
+                                                          build_method_call(
+                                                            new_id,
+                                                            str_to_ident("to_tts"),
+                                                            TokenStream::mk_empty()));
+                let close_sp_field =
+                     build_struct_field_assign(str_to_ident("close_span"),
+                                               as_ts(vec![str_to_tok_ident("DUMMY_SP")]));
 
                 let new_dl = concat(delim_field,
                              concat(open_sp_field,
@@ -99,8 +111,8 @@ pub fn convert_complex_tts<'cx>(cx: &'cx mut ExtCtxt, tts: Vec<QTT>) -> (Binding
                 append_last(&mut pushes, lex(","));
             }
             QTT::QIdent(t) => {
-                pushes.push(TokenStream::from_tts(vec![t]));
-                pushes.push(TokenStream::mk_empty());
+                pushes.push((TokenStream::from_tts(vec![t]),false));
+                pushes.push((TokenStream::mk_empty(), false));
             }
             _ => {
               panic!("Unhandled case!")
@@ -109,34 +121,7 @@ pub fn convert_complex_tts<'cx>(cx: &'cx mut ExtCtxt, tts: Vec<QTT>) -> (Binding
 
     }
 
-    let output_id = str_to_ident("output");
-    if pushes.len() == 1 {
-        let mut res = pushes.get(0).unwrap().clone();
-        if res.len() > 1 {
-          res = build_push_vec(res);
-        }
-        let res = concat(res, lex(".to_appendable()"));
-        (bindings, res)
-    } else {
-        let push_id = str_to_ident("push");
-        let append_id = str_to_ident("append");
-        let output = lex("let mut output : Vec<TokenTree> = Vec::new();");
-        let mut output = concat(output, as_ts(vec![Token::Semi]));
-
-        for mut ts in pushes.into_iter().filter(|x| x.len() > 0) {
-            let mut args = lex("&mut ");
-            args = concat(args, build_push_vec(ts));
-            args = concat(args, lex(".to_appendable()"));
-            let push_vec = build_method_call(output_id, append_id, args);
-            output = concat(output, push_vec);
-            output = concat(output, as_ts(vec![Token::Semi]));
-        }
-
-        output = concat(output, lex("output.to_appendable()"));
-
-        let res = build_brace_delim(output);
-        (bindings, res)
-    }
+    (bindings, build_concats(pushes))
 }
 
 // ____________________________________________________________________________________________
@@ -160,6 +145,17 @@ pub fn is_unquote(id: Ident) -> bool {
 pub fn is_quote(id: Ident) -> bool {
     let qq = str_to_ident("qquote");
     id.name == qq.name  // We disregard context; qquote is _reserved_
+}
+
+pub fn append_last(tts: &mut Vec<(TokenStream, bool)>, to_app: TokenStream) {
+    let push_elem = {
+      let last = tts.pop();
+      match last {
+          Some((ts, _)) => (concat(ts, to_app), true),
+          None => (to_app, true),
+      }
+    };
+    tts.push(push_elem);
 }
 
 

@@ -9,10 +9,8 @@
 extern crate rustc_plugin;
 extern crate syntax;
 extern crate qquote;
-// extern crate syntax_pos;
 
-use qquote::build::{build_paren_delim, build_brace_delim, ident_eq, str_to_tok_ident};
-use qquote::quotable::Quotable;
+use qquote::build::{build_paren_delim, build_brace_delim, ident_eq, str_to_tok_ident, concat};
 use qquote::{build_emitter};
 use syntax::ast::{self, Ident};
 use syntax::tokenstream::{self, TokenTree, Delimited, TokenStream};
@@ -44,41 +42,50 @@ pub fn plugin_registrar(reg: &mut Registry) {
 }
 
 fn double<'cx>(cx: &'cx mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<base::MacResult + 'cx> {
-    let mut tts1 = build_paren_delim(TokenStream::from_tts(tts.clone().to_owned()));
-    let mut tts2 = build_paren_delim(TokenStream::from_tts(tts.clone().to_owned()));
+    let mut ts1 = build_paren_delim(TokenStream::from_tts(tts.clone().to_owned()));
+    let mut ts2 = build_paren_delim(TokenStream::from_tts(tts.clone().to_owned()));
 
-    let output: Vec<TokenTree> = qquote!({ unquote(tts1) + unquote(tts2) });
+    let output: TokenStream = qquote!({ unquote(ts1) + unquote(ts2) });
 
-    { if DEBUG { println!("\nQQ out: {}\n", pprust::tts_to_string(&output[..])); } }
+    { if DEBUG { println!("\nQQ out: {}\n", pprust::tts_to_string(&output.to_tts()[..])); } }
 
     build_emitter(cx, sp, output)
 }
 
 fn double2<'cx>(cx: &'cx mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<base::MacResult + 'cx> {
-    build_emitter(cx, sp, qquote!({unquote(tts) * 2}))
+    let ts = TokenStream::from_tts(tts.clone().to_owned());
+    build_emitter(cx, sp, qquote!({unquote(ts) * 2}))
 }
+
+fn mt_test<'cx>(cx: &'cx mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<base::MacResult + 'cx> {
+    build_emitter(cx, sp, qquote!())
+}
+
 
 fn cond<'cx>(cx: &'cx mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<base::MacResult + 'cx> {
-    build_emitter(cx, sp, cond_rec(tts.clone().to_owned()))
+    let output = cond_rec(TokenStream::from_tts(tts.clone().to_owned()));
+    { if DEBUG { println!("\nQQ out: {}\n", pprust::tts_to_string(&output.to_tts()[..])); } }
+    build_emitter(cx, sp, output)
 }
 
-fn cond_rec(input: Vec<TokenTree>) -> Vec<TokenTree> {
+fn cond_rec(input: TokenStream) -> TokenStream {
   if input.is_empty() { return qquote!(); }
+  // if input.is_empty() { return TokenStream::mk_empty(); }
 
-  let next = &input[0..1];
-  let rest = &input[1..];
+  let next = input.slice(0..1);
+  let rest = input.slice_from(1..);
 
-  let clause : Vec<TokenTree> = match *next.get(0).unwrap() {
-    TokenTree::Delimited(_, ref dlm) => dlm.tts.clone().to_owned(),
+  let clause : TokenStream = match next.maybe_delimited() {
+    Some(ts) => ts,
     _ => panic!("Invalid input"),
   };
 
   if clause.len() < 2 { panic!("Invalid macro usage in cond: {:?}", clause) } // clause is ([test]) [rhs]
 
-  let test: TokenTree = clause.get(0).unwrap().clone().to_owned();
-  let rhs: Vec<TokenTree> = clause[1..].to_owned();
+  let test: TokenStream = clause.slice(0..1);
+  let rhs: TokenStream = clause.slice_from(1..);
 
-  if ident_eq(&test, str_to_ident("else")) || rest.is_empty() {
+  if ident_eq(&test[0], str_to_ident("else")) || rest.is_empty() {
     qquote!({unquote(rhs)})
   } else {
     qquote!({if unquote(test) { unquote(rhs) } else { cond!(unquote(rest)) } })

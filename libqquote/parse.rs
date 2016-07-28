@@ -1,9 +1,5 @@
-#![feature(plugin_registrar, rustc_private)]
-
 extern crate syntax;
-extern crate syntax_pos;
 
-use syntax::parse::parser::Parser;
 use syntax::parse::{ParseSess,filemap_to_tts};
 use syntax::tokenstream::TokenStream;
 
