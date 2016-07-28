@@ -11,7 +11,7 @@ extern crate syntax;
 extern crate qquote;
 // extern crate syntax_pos;
 
-use qquote::convert::{build_paren_delim, build_brace_delim, ident_eq, str_to_tt_ident};
+use qquote::build::{build_paren_delim, build_brace_delim, ident_eq, str_to_tok_ident};
 use qquote::quotable::Quotable;
 use qquote::{build_emitter};
 use syntax::ast::{self, Ident};
@@ -40,31 +40,12 @@ static DEBUG : bool = true;
 pub fn plugin_registrar(reg: &mut Registry) {
     reg.register_macro("double", double);
     reg.register_macro("double2", double2);
-    reg.register_macro("double3", double3);
     reg.register_macro("cond", cond);
 }
 
-fn double3<'cx>(cx: &'cx mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<base::MacResult + 'cx> {
-    let a = 5;
-    let mut output: Vec<TokenTree> = Vec::new();
-    let mut inner = Vec::new();
-    inner.push(str_to_tt_ident("a"));
-    inner.push(TokenTree::Token(DUMMY_SP, Token::Dot));
-    inner.push(str_to_tt_ident("b"));
-    output.push(build_brace_delim(inner));
-    println!("A's hygiene: {:?}", str_to_ident("a").ctxt);
-
-    { if DEBUG { println!("\nQQ out: {:?}\n", output); } }
-    { if DEBUG { println!("\nQQ out: {}\n", pprust::tts_to_string(&output[..])); } }
-
-    build_emitter(cx, sp, output)
-}
-
-
-
 fn double<'cx>(cx: &'cx mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<base::MacResult + 'cx> {
-    let mut tts1 = build_paren_delim(tts.clone().to_owned());
-    let mut tts2 = build_paren_delim(tts.clone().to_owned());
+    let mut tts1 = build_paren_delim(TokenStream::from_tts(tts.clone().to_owned()));
+    let mut tts2 = build_paren_delim(TokenStream::from_tts(tts.clone().to_owned()));
 
     let output: Vec<TokenTree> = qquote!({ unquote(tts1) + unquote(tts2) });
 

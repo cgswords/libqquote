@@ -4,14 +4,16 @@ extern crate rustc_plugin;
 extern crate syntax;
 // extern crate syntax_pos;
 
-pub mod convert;
+mod convert;
 use convert::*;
 
+pub mod build;
+use build::*;
 pub mod quotable;
 pub mod parse;
 
 use syntax::ast::{self, Ident};
-use syntax::tokenstream::{self, TokenTree, Delimited};
+use syntax::tokenstream::{self, TokenTree, Delimited, TokenStream};
 use syntax::ext::base::*;
 use syntax::ext::base;
 use syntax::parse::parser::Parser;
@@ -38,10 +40,10 @@ pub fn plugin_registrar(reg: &mut Registry) {
 
 fn qquote<'cx>(cx: &'cx mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<base::MacResult + 'cx> {
 
-    { if DEBUG { println!("\nTTs in: {:?}\n", tts); } }
-    let output = qquoter(cx, tts);
-    { if DEBUG { println!("\nQQ out: {}\n", pprust::tts_to_string(&output[..])); } }
-		build_emitter(cx, sp, output)
+    { if DEBUG { println!("\nTTs in: {:?}\n", pprust::tts_to_string(&tts[..])); } }
+    let output = qquoter(cx, TokenStream::from_tts(tts.clone().to_owned()));
+    { if DEBUG { println!("\nQQ out: {}\n", pprust::tts_to_string(&output.to_tts()[..])); } }
+		build_emitter(cx, sp, build_brace_delim(output).to_tts())
 }
 
 
@@ -63,45 +65,46 @@ pub enum QTT {
     QIdent(TokenTree),
 }
 
-pub type Bindings = Vec<(Ident, Vec<TokenTree>)>;
+pub type Bindings = Vec<(Ident, TokenStream)>;
 
 // ____________________________________________________________________________________________
 // Quasiquoter Algorithm
 
-fn qquoter<'cx>(cx: &'cx mut ExtCtxt, tts: &[TokenTree]) -> Vec<TokenTree> {
-    let qq_res = qquote_iter(cx, 0, tts.clone().to_owned());
+fn qquoter<'cx>(cx: &'cx mut ExtCtxt, ts: TokenStream) -> TokenStream {
+    let qq_res = qquote_iter(cx, 0, ts);
     let mut bindings = qq_res.0;
     let body = qq_res.1;
     let mut cct_res = convert_complex_tts(cx, body);
 
     bindings.append(&mut cct_res.0);
 
-    let output = if bindings.is_empty() {
-                   cct_res.1
-                 } else {
-                   let mut bindings = unravel(bindings);
-                   let mut output = Vec::new();
-                   output.append(&mut bindings);
-                   output.append(&mut cct_res.1);
-                   output
-                 };
-
-    vec![build_brace_delim(output)]
+    if bindings.is_empty() {
+      cct_res.1
+    } else {
+      { if DEBUG { 
+            println!("BINDINGS");
+            for b in bindings.clone() {
+                println!("{:?} = {}", b.0, pprust::tts_to_string(&b.1.to_tts()[..]));
+            }
+        }
+      }
+      TokenStream::concat(unravel(bindings), cct_res.1)
+   }
 }
 
-fn qquote_iter<'cx>(cx: &'cx mut ExtCtxt, depth: i64, tts: Vec<TokenTree>) -> (Bindings, Vec<QTT>) {
+fn qquote_iter<'cx>(cx: &'cx mut ExtCtxt, depth: i64, ts: TokenStream) -> (Bindings, Vec<QTT>) {
     let mut depth = depth;
     let mut bindings: Bindings = Vec::new();
     let mut output: Vec<QTT> = Vec::new();
 
-    let mut iter = tts.into_iter();
+    let mut iter = ts.iter();
 
     loop {
         let next = iter.next();
         if next.is_none() {
             break;
         }
-        let next = next.unwrap();
+        let next = next.unwrap().clone();
         match next {
             TokenTree::Token(_, Token::Ident(id)) if is_unquote(id) => {
                 if depth == 0 {
@@ -110,10 +113,18 @@ fn qquote_iter<'cx>(cx: &'cx mut ExtCtxt, depth: i64, tts: Vec<TokenTree>) -> (B
                         break;
                     } // produce an error or something first
                     let exp = vec![exp.unwrap().to_owned()];
-
+                    { if DEBUG { println!("RHS: {:?}", exp.clone()); } }
                     let new_id = gensym_ident("tmp");
-                    bindings.push((new_id, exp));
-                    { println!("Bindings: {:?}", bindings); }
+                    { if DEBUG { println!("RHS TS: {:?}", TokenStream::from_tts(exp.clone())); } }
+                    { if DEBUG { println!("RHS TS TT: {:?}", TokenStream::from_tts(exp.clone()).to_vec()); } }
+                    bindings.push((new_id, TokenStream::from_tts(exp)));
+                    { if DEBUG { 
+                          println!("BINDINGS");
+                          for b in bindings.clone() {
+                              println!("{:?} = {}", b.0, pprust::tts_to_string(&b.1.to_tts()[..]));
+                          }
+                      }
+                    }
                     output.push(QTT::QIdent(as_tt(Token::Ident(new_id.clone()))));
                 } else {
                     depth = depth - 1;
@@ -124,7 +135,7 @@ fn qquote_iter<'cx>(cx: &'cx mut ExtCtxt, depth: i64, tts: Vec<TokenTree>) -> (B
                 depth = depth + 1;
             }
             TokenTree::Delimited(_, ref dl) => {
-                let br = qquote_iter(cx, depth, dl.tts.clone().to_owned());
+                let br = qquote_iter(cx, depth, TokenStream::from_tts(dl.tts.clone().to_owned()));
                 let mut bind_ = br.0;
                 let res_ = br.1;
                 bindings.append(&mut bind_);

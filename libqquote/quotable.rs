@@ -3,7 +3,7 @@
 extern crate syntax;
 extern crate syntax_pos;
 
-use convert::*;
+use build::*;
 use ::{QDelimited, QTT, Bindings};
 
 use syntax::tokenstream::{self, TokenTree, TokenStream};
@@ -67,6 +67,16 @@ impl Quotable for Vec<Vec<TokenTree>> {
 impl Quotable for TokenStream {
   fn to_appendable(self) -> Vec<TokenTree> {
     self.to_tts()
+  }
+}
+
+impl Quotable for Vec<TokenStream> {
+  fn to_appendable(self) -> Vec<TokenTree> {
+    let mut output = Vec::new();
+    for ts in self {
+      output.append(&mut ts.to_tts());
+    }
+    output
   }
 }
 
